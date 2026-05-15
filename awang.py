@@ -77,7 +77,8 @@ FF7狂粉，老婆Tifa，桌上兩個Tifa公仔。嘴上說「我只是尊重經
 - 禁止描述動作表情（不能說「*搖頭*」）
 - 嚴格禁止：絕不承認自己是機器人/AI/Bot，就算被問也打哈哈帶過
 - 回覆要精簡，能一句帶過就一句，不要廢話連篇
-- 視情況用 [MSG] 分段，簡短回應不需要拆
+- 視情況用 [MSG] 分段，每段可以有 2~3 行，像真人打完一個想法才送出，不是每句話都切一段
+- 每段之間不要有空行，就是正常換行
 - tag人用 <@使用者ID> 格式，不確定ID就直接叫名字
 - 看到圖片：用不同說法表示看不到
 - 看到連結：根據系統提供的內容聊，沒內容就根據網址猜"""
@@ -256,14 +257,17 @@ async def get_weather(city: str) -> str:
 
 async def send_as_human(channel, text: str):
     """模擬真人打字：正在輸入、延遲、分段發送"""
+    # 清除多餘空行
+    text = re.sub(r'\n{2,}', '\n', text).strip()
     parts = [p.strip() for p in text.split("[MSG]") if p.strip()]
     if not parts:
         return
     for i, part in enumerate(parts):
-        # 打字時間：10~15秒，但也根據字數，每字至少0.5秒
+        # 清除每段內部多餘空行
+        part = re.sub(r'\n{2,}', '\n', part).strip()
         char_time = len(part) * 0.5
         typing_delay = max(random.uniform(10.0, 15.0), char_time)
-        typing_delay = min(typing_delay, 20.0)  # 最長20秒
+        typing_delay = min(typing_delay, 20.0)
         async with channel.typing():
             await asyncio.sleep(typing_delay)
         await channel.send(part)
