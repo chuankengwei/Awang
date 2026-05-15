@@ -155,7 +155,7 @@ def _update_impression_sync(user_id: str, name: str, impression: str):
         now = datetime.now(TZ).strftime("%Y-%m-%d %H:%M")
         for i, r in enumerate(records):
             if str(r.get("使用者ID")) == str(user_id):
-                ws.update(f"B{i+2}:D{i+2}", [[name, impression, now]])
+                ws.update(range_name=f"B{i+2}:D{i+2}", values=[[name, impression, now]])
                 return
         ws.append_row([user_id, name, impression, now])
     except Exception as e:
