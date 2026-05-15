@@ -105,6 +105,7 @@ processed_message_ids = deque(maxlen=1000)
 processed_set = set()
 last_message_time = None
 convo_mode = {}
+is_responding = False  # 是否正在回應中，避免同時回多人
 
 _sheet_cache = None
 _worksheet_cache = {}
@@ -273,7 +274,7 @@ async def send_as_human(channel, text: str):
         if i < len(parts) - 1:
             await asyncio.sleep(random.uniform(10.0, 15.0))
 
-async def ask_awang(user_message: str, author_name: str, channel, is_mentioned: bool = False, url_contents: str = "") -> str:
+async def ask_awang(user_message: str, author_name: str, author_id: str, channel, is_mentioned: bool = False, url_contents: str = "") -> str:
     try:
         impressions = await get_all_impressions()
         impression_str = format_impressions(impressions)
@@ -286,9 +287,9 @@ async def ask_awang(user_message: str, author_name: str, channel, is_mentioned: 
         url_info = f"\n\n【連結內容】\n{url_contents}" if url_contents else ""
 
         if is_mentioned:
-            prompt = f"{author_name} 找你說話：{user_message}{url_info}\n\n用阿旺風格回應，精簡一點，需要分段才用[MSG]。"
+            prompt = f"<@{author_id}>（{author_name}）找你說話：{user_message}{url_info}\n\n用阿旺風格回應這個人，回應時用 <@{author_id}> tag 他，精簡，需要分段才用[MSG]。"
         else:
-            prompt = f"{author_name} 說：{user_message}{url_info}\n\n要回應嗎？要的話用阿旺風格，精簡，需要分段才用[MSG]；不需要回就只回[SKIP]。"
+            prompt = f"<@{author_id}>（{author_name}）說：{user_message}{url_info}\n\n要回應嗎？要的話用阿旺風格回應這個人，用 <@{author_id}> tag 他，精簡，需要分段才用[MSG]；不需要回就只回[SKIP]。"
 
         def _call():
             return claude_client.messages.create(
@@ -364,7 +365,7 @@ async def check_idle():
 
 @bot.event
 async def on_message(message):
-    global last_message_time
+    global last_message_time, is_responding
 
     if message.author.bot:
         return
@@ -425,29 +426,45 @@ async def on_message(message):
         return "\n".join([r for r in results if r])
 
     if is_mentioned:
-        enter_convo_mode(user_id)
-        url_contents = await get_url_contents(content)
-        response = await ask_awang(content, author_name, message.channel, is_mentioned=True, url_contents=url_contents)
-        if response and response != "[SKIP]":
-            await send_as_human(message.channel, response)
-        asyncio.create_task(maybe_update_impression(user_id, author_name, content, await get_all_impressions()))
+        if is_responding:
+            return  # 正在回應別人，先跳過
+        is_responding = True
+        try:
+            enter_convo_mode(user_id)
+            url_contents = await get_url_contents(content)
+            response = await ask_awang(content, author_name, user_id, message.channel, is_mentioned=True, url_contents=url_contents)
+            if response and response != "[SKIP]":
+                await send_as_human(message.channel, response)
+            asyncio.create_task(maybe_update_impression(user_id, author_name, content, await get_all_impressions()))
+        finally:
+            is_responding = False
         return
 
     if is_in_convo_mode(user_id):
-        enter_convo_mode(user_id)
-        url_contents = await get_url_contents(content)
-        response = await ask_awang(content, author_name, message.channel, is_mentioned=True, url_contents=url_contents)
-        if response and response != "[SKIP]":
-            await send_as_human(message.channel, response)
-        asyncio.create_task(maybe_update_impression(user_id, author_name, content, await get_all_impressions()))
+        if is_responding:
+            return
+        is_responding = True
+        try:
+            enter_convo_mode(user_id)
+            url_contents = await get_url_contents(content)
+            response = await ask_awang(content, author_name, user_id, message.channel, is_mentioned=True, url_contents=url_contents)
+            if response and response != "[SKIP]":
+                await send_as_human(message.channel, response)
+            asyncio.create_task(maybe_update_impression(user_id, author_name, content, await get_all_impressions()))
+        finally:
+            is_responding = False
         return
 
     should_consider = random.random() < 0.4
-    if should_consider:
-        url_contents = await get_url_contents(content)
-        response = await ask_awang(content, author_name, message.channel, is_mentioned=False, url_contents=url_contents)
-        if response and response != "[SKIP]":
-            await send_as_human(message.channel, response)
+    if should_consider and not is_responding:
+        is_responding = True
+        try:
+            url_contents = await get_url_contents(content)
+            response = await ask_awang(content, author_name, user_id, message.channel, is_mentioned=False, url_contents=url_contents)
+            if response and response != "[SKIP]":
+                await send_as_human(message.channel, response)
+        finally:
+            is_responding = False
 
     msg_hash = int(hashlib.md5(f"{user_id}{datetime.now(TZ).strftime('%Y-%m-%d-%H')}".encode()).hexdigest(), 16)
     if msg_hash % 5 == 0:
