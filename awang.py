@@ -221,11 +221,11 @@ async def send_as_human(channel, text: str):
         return
     for i, part in enumerate(parts):
         async with channel.typing():
-            typing_delay = random.uniform(1.0, 2.5)
+            typing_delay = random.uniform(5.0, 10.0)
             await asyncio.sleep(typing_delay)
         await channel.send(part)
         if i < len(parts) - 1:
-            await asyncio.sleep(random.uniform(0.5, 1.5))
+            await asyncio.sleep(random.uniform(5.0, 10.0))
 
 async def ask_awang(user_message: str, author_name: str, channel, is_mentioned: bool = False) -> str:
     try:
