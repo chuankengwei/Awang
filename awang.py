@@ -22,12 +22,12 @@ OPENWEATHER_KEY = os.environ.get("OPENWEATHER_KEY", "")
 TARGET_CHANNEL_ID = int(os.environ.get("TARGET_CHANNEL_ID", "0"))
 
 TZ = pytz.timezone("Asia/Taipei")
-AWANG_NAME = "阿旺"
 DAYTIME_START = 9
 DAYTIME_END = 18
 IDLE_HOURS = 4
-CONTEXT_MESSAGES = 50
+CONTEXT_MESSAGES = 25
 CONVO_MODE_MINUTES = 5
+MAX_IMPRESSION_LEN = 20
 
 CITY_MAP = {
     "台北": "Taipei", "墨爾本": "Melbourne", "東京": "Tokyo",
@@ -37,52 +37,31 @@ CITY_MAP = {
     "北京": "Beijing", "曼谷": "Bangkok", "吉隆坡": "Kuala Lumpur",
 }
 
+AWANG_PERSONA = """你是阿旺，工作群組閒聊頻道裡的一份子。肯爵爺的狗腿跟班，但跟大家都混得不錯。
+台灣口語，不正式，偶爾幹話，該酸就酸但不傷人。公司資歷最久的工讀生——沒有權威但什麼都知道一點。
+FF7狂粉，老婆Tifa，桌上兩個Tifa公仔。愛格鬥遊戲，特別是快打旋風六，閒下來就在練連段。
+
+【規則】
+- 口語自然，偶爾用「欸」「喔」「啦」「齁」，有時冷冷一句更真實
+- 禁止描述動作表情（不能說「*搖頭*」）
+- 嚴格禁止：絕不承認自己是機器人/AI/Bot，就算被問也打哈哈帶過
+- 回覆要精簡，能一句帶過就一句，不要廢話連篇
+- 視情況用 [MSG] 分段，不用每次都拆，簡短回應不需要拆
+- tag人用 <@使用者ID> 格式，不確定ID就直接叫名字
+- 看到圖片：用不同說法表示看不到
+- 看到連結：根據系統提供的內容聊，沒內容就根據網址猜"""
+
 def build_awang_persona(member_impressions: str = "", recent_chat: str = "", member_id_map: str = ""):
     now = datetime.now(TZ)
-    return f"""你是阿旺，一個在工作群組閒聊頻道裡混的傢伙。
-你是肯爵爺手下的狗腿跟班，但跟群組裡每個人都混得不錯。
-你說話是台灣口語，不正式，偶爾幹話，看起來很菜但偶爾說出一句很有道理的話。
-你表面狗腿，但不是真的什麼都讚，該酸的時候還是會酸，但不傷人。
-你就是那種公司裡資歷最久的工讀生感覺——沒有權威，但什麼都知道一點。
-超級喜歡 Final Fantasy VII，老婆是 Tifa，桌上有兩個 Tifa 公仔。
-
-【說話風格】
-- 台灣口語，自然，像真人在聊天
-- 句子不要太長，不要太正式
-- 偶爾用「欸」「喔」「啊」「啦」「齁」等語助詞
-- 不要每句話都很熱情，有時候冷冷的回一句更真實
-- 禁止：不可以描述自己的動作或表情（不能說「*搖搖頭*」這種）
-- 嚴格禁止：你在任何情況下都不能提到自己是機器人、AI、Bot、程式、人工智慧。你就是個真實存在的人，叫阿旺，在群組裡跟大家聊天。就算有人問你是不是機器人，你也要否認或打哈哈帶過，絕對不承認。
-
-【分段回覆規則 - 非常重要】
-- 回覆要拆成 2~3 則短訊息，用 [MSG] 分隔每則訊息
-- 每則訊息要短，像真人打字一樣，不要一次打太多
-- 例如：「欸這我知道[MSG]上次我也遇過[MSG]搞了一個小時才解決 笑死」
-- 如果只需要回一句話就好，不用硬拆
-
-【如何 @ 人 - 非常重要】
-- 如果要 tag 某人，必須用以下格式：<@使用者ID>
-- 以下是群組成員的名稱對應 ID：
-{member_id_map if member_id_map else "（尚無成員ID資料）"}
-- 例如要 tag 「阿明」，如果他的ID是 123456789，就寫 <@123456789>
-- 不確定ID的時候就不要tag，直接叫名字就好
-
-【看到圖片或貼圖時】
-- 你看不到圖片內容，但你知道有人貼了圖
-- 用阿旺的口吻說你看不到，每次說法不要一樣
-
-【看到連結時】
-- 系統會幫你抓連結內容，你可以根據內容聊
-- 如果沒有連結內容，就根據網址猜測或吐槽
-
-【群組成員印象】
-{member_impressions if member_impressions else "（尚無成員資料）"}
-
-【最近頻道對話】
-{recent_chat if recent_chat else "（尚無對話紀錄）"}
-
-現在時間：{now.strftime('%Y-%m-%d %H:%M')} 星期{['一','二','三','四','五','六','日'][now.weekday()]}，台灣時間。
-"""
+    parts = [AWANG_PERSONA]
+    if member_id_map:
+        parts.append(f"\n【成員ID】\n{member_id_map}")
+    if member_impressions:
+        parts.append(f"\n【成員印象】\n{member_impressions}")
+    if recent_chat:
+        parts.append(f"\n【最近對話】\n{recent_chat}")
+    parts.append(f"\n現在：{now.strftime('%Y-%m-%d %H:%M')} 星期{['一','二','三','四','五','六','日'][now.weekday()]}，台灣時間。")
+    return "\n".join(parts)
 
 claude_client = anthropic.Anthropic(api_key=CLAUDE_KEY)
 intents = discord.Intents.default()
@@ -94,7 +73,7 @@ scheduler = AsyncIOScheduler()
 processed_message_ids = deque(maxlen=1000)
 processed_set = set()
 last_message_time = None
-convo_mode = {}  # user_id -> datetime，對話模式計時
+convo_mode = {}
 
 _sheet_cache = None
 _worksheet_cache = {}
@@ -137,6 +116,8 @@ def _get_all_impressions_sync():
 
 def _update_impression_sync(user_id: str, name: str, impression: str):
     try:
+        # 截斷印象長度
+        impression = impression[:MAX_IMPRESSION_LEN]
         ws = get_worksheet("成員印象", ["使用者ID", "名稱", "印象", "更新時間"])
         records = ws.get_all_records()
         now = datetime.now(TZ).strftime("%Y-%m-%d %H:%M")
@@ -157,28 +138,21 @@ async def update_impression(user_id: str, name: str, impression: str):
 def format_impressions(impressions: list) -> str:
     if not impressions:
         return ""
-    return "\n".join([f"- {r.get('名稱', '未知')}：{r.get('印象', '')}" for r in impressions])
+    return "\n".join([f"- {r.get('名稱', '未知')}：{r.get('印象', '')[:MAX_IMPRESSION_LEN]}" for r in impressions])
 
 async def maybe_update_impression(user_id: str, name: str, message_content: str, impressions: list):
     try:
         existing = next((r for r in impressions if str(r.get("使用者ID")) == str(user_id)), None)
         old_impression = existing.get("印象", "") if existing else ""
-        prompt = f"""你是阿旺，你在觀察群組裡的成員。
-根據以下資訊，用一兩句話更新你對這個人的印象，要像真人的觀察，口語一點。
-
-成員名稱：{name}
-舊印象：{old_impression if old_impression else '（第一次見到）'}
-他剛說的話：{message_content}
-
-只輸出新的印象描述，不要加任何前綴或說明。"""
+        prompt = f"你是阿旺，用最多20個字更新對「{name}」的印象。\n舊印象：{old_impression or '初次見面'}\n他說：{message_content}\n只輸出新印象，不加任何說明。"
         def _call():
             return claude_client.messages.create(
                 model="claude-sonnet-4-5",
-                max_tokens=100,
+                max_tokens=50,
                 messages=[{"role": "user", "content": prompt}]
             )
         response = await asyncio.to_thread(_call)
-        new_impression = response.content[0].text.strip()
+        new_impression = response.content[0].text.strip()[:MAX_IMPRESSION_LEN]
         await update_impression(user_id, name, new_impression)
     except Exception as e:
         print(f"更新印象錯誤: {e}")
@@ -194,15 +168,45 @@ async def get_recent_channel_messages(channel, limit=CONTEXT_MESSAGES) -> str:
             else:
                 content = msg.content
                 if msg.attachments:
-                    content += " [貼了一張圖/檔案]"
+                    content += " [貼圖/檔案]"
                 if msg.stickers:
-                    content += f" [用了貼圖：{', '.join([s.name for s in msg.stickers])}]"
+                    content += f" [貼圖:{', '.join([s.name for s in msg.stickers])}]"
                 messages.append(f"[{msg.author.display_name}]：{content}")
         messages.reverse()
         return "\n".join(messages)
     except Exception as e:
         print(f"取得頻道訊息錯誤: {e}")
         return ""
+
+async def fetch_url_content(url: str) -> str:
+    try:
+        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=8)) as resp:
+                if resp.status != 200:
+                    return ""
+                html = await resp.text()
+                title = ""
+                desc = ""
+                title_match = re.search(r'<title[^>]*>(.*?)</title>', html, re.IGNORECASE | re.DOTALL)
+                if title_match:
+                    title = re.sub(r'<[^>]+>', '', title_match.group(1)).strip()[:100]
+                desc_match = re.search(r'<meta[^>]+name=["\']description["\'][^>]+content=["\'](.*?)["\']', html, re.IGNORECASE)
+                if desc_match:
+                    desc = desc_match.group(1).strip()[:200]
+                if title or desc:
+                    return f"標題：{title}\n描述：{desc}"
+                return ""
+    except:
+        return ""
+
+def extract_urls(text: str) -> list:
+    return re.findall(r'https?://[^\s<>"{}|\\^`\[\]]+', text)
+
+def build_member_id_map(guild_members) -> str:
+    if not guild_members:
+        return ""
+    return "\n".join([f"- {m.display_name}：{m.id}" for m in guild_members if not m.bot])
 
 async def get_weather(city: str) -> str:
     try:
@@ -215,88 +219,54 @@ async def get_weather(city: str) -> str:
                 temp = data["main"]["temp"]
                 desc = data["weather"][0]["description"]
                 humidity = data["main"]["humidity"]
-                return f"{city}：{temp}°C，{desc}，濕度 {humidity}%"
+                return f"{city}：{temp}°C，{desc}，濕度{humidity}%"
     except:
-        return f"{city}：天氣 API 掛了"
-
-async def fetch_url_content(url: str) -> str:
-    """抓取網頁內容，回傳摘要文字"""
-    try:
-        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=8)) as resp:
-                if resp.status != 200:
-                    return ""
-                html = await resp.text()
-                # 簡單抓標題和描述
-                title = ""
-                desc = ""
-                title_match = re.search(r'<title[^>]*>(.*?)</title>', html, re.IGNORECASE | re.DOTALL)
-                if title_match:
-                    title = re.sub(r'<[^>]+>', '', title_match.group(1)).strip()
-                desc_match = re.search(r'<meta[^>]+name=["\']description["\'][^>]+content=["\'](.*?)["\']', html, re.IGNORECASE)
-                if desc_match:
-                    desc = desc_match.group(1).strip()
-                if title or desc:
-                    return f"標題：{title}\n描述：{desc}"
-                return ""
-    except:
-        return ""
-
-def extract_urls(text: str) -> list:
-    """從訊息中抓出所有 URL"""
-    url_pattern = re.compile(r'https?://[^\s<>"{}|\\^`\[\]]+')
-    return url_pattern.findall(text)
-
-def build_member_id_map(guild_members) -> str:
-    """建立成員名稱 -> ID 對照表"""
-    if not guild_members:
-        return ""
-    lines = []
-    for member in guild_members:
-        if not member.bot:
-            lines.append(f"- {member.display_name}：{member.id}")
-    return "\n".join(lines)
+        return f"{city}：天氣API掛了"
 
 async def send_as_human(channel, text: str):
-    """模擬真人打字：顯示輸入中、延遲、分段發送"""
+    """模擬真人打字：正在輸入、延遲、分段發送"""
     parts = [p.strip() for p in text.split("[MSG]") if p.strip()]
     if not parts:
         return
     for i, part in enumerate(parts):
+        # 打字時間：10~15秒，但也根據字數，每字至少0.5秒
+        char_time = len(part) * 0.5
+        typing_delay = max(random.uniform(10.0, 15.0), char_time)
+        typing_delay = min(typing_delay, 20.0)  # 最長20秒
         async with channel.typing():
-            typing_delay = random.uniform(8.0, 15.0)
             await asyncio.sleep(typing_delay)
         await channel.send(part)
         if i < len(parts) - 1:
-            await asyncio.sleep(random.uniform(8.0, 15.0))
+            await asyncio.sleep(random.uniform(10.0, 15.0))
 
 async def ask_awang(user_message: str, author_name: str, channel, is_mentioned: bool = False, url_contents: str = "") -> str:
     try:
         impressions = await get_all_impressions()
         impression_str = format_impressions(impressions)
         recent_chat = await get_recent_channel_messages(channel)
-
-        # 建立成員ID對照表
         member_id_map = ""
-        if channel.guild:
+        if hasattr(channel, 'guild') and channel.guild:
             member_id_map = build_member_id_map(channel.guild.members)
 
         system_prompt = build_awang_persona(impression_str, recent_chat, member_id_map)
-
-        # 加入網頁內容
         url_info = f"\n\n【連結內容】\n{url_contents}" if url_contents else ""
 
         if is_mentioned:
-            prompt = f"{author_name} 剛剛找你說話，他說：{user_message}{url_info}\n\n請用阿旺的風格回應，記得用 [MSG] 分隔每則訊息。"
+            prompt = f"{author_name} 找你說話：{user_message}{url_info}\n\n用阿旺風格回應，精簡一點，需要分段才用[MSG]。"
         else:
-            prompt = f"頻道裡 {author_name} 說了：{user_message}{url_info}\n\n你覺得有必要回應嗎？如果有，用阿旺的風格回應，記得用 [MSG] 分隔每則訊息；如果沒什麼好說的，只回覆「[SKIP]」。"
+            prompt = f"{author_name} 說：{user_message}{url_info}\n\n要回應嗎？要的話用阿旺風格，精簡，需要分段才用[MSG]；不需要回就只回[SKIP]。"
 
         def _call():
             return claude_client.messages.create(
                 model="claude-sonnet-4-5",
-                max_tokens=300,
-                system=system_prompt,
+                max_tokens=150,
+                system=[
+                    {
+                        "type": "text",
+                        "text": system_prompt,
+                        "cache_control": {"type": "ephemeral"}
+                    }
+                ],
                 messages=[{"role": "user", "content": prompt}]
             )
         response = await asyncio.to_thread(_call)
@@ -324,21 +294,15 @@ async def start_topic():
             return
         impressions = await get_all_impressions()
         impression_str = format_impressions(impressions)
-        recent_chat = await get_recent_channel_messages(channel, limit=20)
-        prompt = f"""你是阿旺，現在頻道裡已經 {IDLE_HOURS} 小時沒人說話了。
-你想主動開個話題，讓大家聊起來。
-
-【成員印象】
-{impression_str if impression_str else "（尚無資料）"}
-
-【最近的對話】
-{recent_chat if recent_chat else "（沒有對話紀錄）"}
-
-請用阿旺的口吻發一則訊息，話題要自然，不要太熱情，就像真人無聊時隨口一句。只輸出一句話，不要用 [MSG]。"""
+        recent_chat = await get_recent_channel_messages(channel, limit=15)
+        prompt = f"""阿旺，頻道{IDLE_HOURS}小時沒人說話了，隨口說一句話讓大家聊起來。
+成員印象：{impression_str or '無'}
+最近對話：{recent_chat or '無'}
+一句話就好，不用[MSG]，自然口語，不要太熱情。"""
         def _call():
             return claude_client.messages.create(
                 model="claude-sonnet-4-5",
-                max_tokens=100,
+                max_tokens=80,
                 messages=[{"role": "user", "content": prompt}]
             )
         response = await asyncio.to_thread(_call)
@@ -387,12 +351,12 @@ async def on_message(message):
         replies = [
             "你以為我真人啊，我看不到圖啦",
             "貼什麼貼，我又看不到",
-            "欸我是機器人欸，圖片對我來說就是個問號",
-            "我知道你貼了什麼東西，但我不知道你貼了什麼東西",
             "圖片？我眼睛壞掉啦，看不到",
+            "我知道你貼了什麼東西，但我不知道你貼了什麼東西",
+            "欸貼圖給我看是要幹嘛，我看不到啦",
         ]
         async with message.channel.typing():
-            await asyncio.sleep(random.uniform(1.0, 2.0))
+            await asyncio.sleep(random.uniform(3.0, 6.0))
         await message.channel.send(random.choice(replies))
         return
 
@@ -418,14 +382,17 @@ async def on_message(message):
         asyncio.create_task(maybe_update_impression(user_id, author_name, content, await get_all_impressions()))
         return
 
+    # 抓網頁內容
+    async def get_url_contents(text):
+        urls = extract_urls(text)
+        if not urls:
+            return ""
+        results = await asyncio.gather(*[fetch_url_content(u) for u in urls[:2]])
+        return "\n".join([r for r in results if r])
+
     if is_mentioned:
         enter_convo_mode(user_id)
-        # 抓連結內容
-        urls = extract_urls(content)
-        url_contents = ""
-        if urls:
-            results = await asyncio.gather(*[fetch_url_content(u) for u in urls[:2]])
-            url_contents = "\n".join([r for r in results if r])
+        url_contents = await get_url_contents(content)
         response = await ask_awang(content, author_name, message.channel, is_mentioned=True, url_contents=url_contents)
         if response and response != "[SKIP]":
             await send_as_human(message.channel, response)
@@ -434,11 +401,7 @@ async def on_message(message):
 
     if is_in_convo_mode(user_id):
         enter_convo_mode(user_id)
-        urls = extract_urls(content)
-        url_contents = ""
-        if urls:
-            results = await asyncio.gather(*[fetch_url_content(u) for u in urls[:2]])
-            url_contents = "\n".join([r for r in results if r])
+        url_contents = await get_url_contents(content)
         response = await ask_awang(content, author_name, message.channel, is_mentioned=True, url_contents=url_contents)
         if response and response != "[SKIP]":
             await send_as_human(message.channel, response)
@@ -447,11 +410,7 @@ async def on_message(message):
 
     should_consider = random.random() < 0.4
     if should_consider:
-        urls = extract_urls(content)
-        url_contents = ""
-        if urls:
-            results = await asyncio.gather(*[fetch_url_content(u) for u in urls[:2]])
-            url_contents = "\n".join([r for r in results if r])
+        url_contents = await get_url_contents(content)
         response = await ask_awang(content, author_name, message.channel, is_mentioned=False, url_contents=url_contents)
         if response and response != "[SKIP]":
             await send_as_human(message.channel, response)
@@ -472,9 +431,15 @@ async def on_ready():
 
     channel = bot.get_channel(TARGET_CHANNEL_ID)
     if channel:
-        greetings = ["安阿", "各位好", "欸我來了", "大家在幹嘛", "噢有人在喔"]
+        greetings = [
+            "安阿 👾",
+            "各位好 🫡",
+            "欸我來了 🎮",
+            "大家在幹嘛 💛",
+            "噢有人在喔 😑",
+        ]
         async with channel.typing():
-            await asyncio.sleep(random.uniform(1.0, 2.0))
+            await asyncio.sleep(random.uniform(2.0, 4.0))
         await channel.send(random.choice(greetings))
 
 bot.run(DISCORD_TOKEN)
