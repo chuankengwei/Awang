@@ -433,6 +433,14 @@ async def on_ready():
 
     channel = bot.get_channel(TARGET_CHANNEL_ID)
     if channel:
-        await channel.send("阿旺上線了，大家繼續聊。")
+        import random
+        greetings = [
+            "安阿",
+            "各位好",
+            "欸我來了",
+            "大家在幹嘛",
+            "嚕嚕",
+        ]
+        await channel.send(random.choice(greetings))
 
 bot.run(DISCORD_TOKEN)
