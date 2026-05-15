@@ -169,7 +169,7 @@ async def maybe_update_impression(user_id: str, name: str, message_content: str,
 
         def _call():
             return claude_client.messages.create(
-                model="claude-sonnet-4-20250514",
+                model="claude-sonnet-4-5",
                 max_tokens=100,
                 messages=[{"role": "user", "content": prompt}]
             )
@@ -251,7 +251,7 @@ async def ask_awang(user_message: str, author_name: str, channel, is_mentioned: 
 
         def _call():
             return claude_client.messages.create(
-                model="claude-sonnet-4-20250514",
+                model="claude-sonnet-4-5",
                 max_tokens=300,
                 system=system_prompt,
                 messages=[{"role": "user", "content": prompt}]
@@ -297,7 +297,7 @@ async def start_topic():
 
         def _call():
             return claude_client.messages.create(
-                model="claude-sonnet-4-20250514",
+                model="claude-sonnet-4-5",
                 max_tokens=150,
                 messages=[{"role": "user", "content": prompt}]
             )
