@@ -11,6 +11,7 @@ import asyncio
 import aiohttp
 import random
 import hashlib
+import re
 from collections import deque
 
 # ===== 設定區 =====
@@ -36,7 +37,7 @@ CITY_MAP = {
     "北京": "Beijing", "曼谷": "Bangkok", "吉隆坡": "Kuala Lumpur",
 }
 
-def build_awang_persona(member_impressions: str = "", recent_chat: str = ""):
+def build_awang_persona(member_impressions: str = "", recent_chat: str = "", member_id_map: str = ""):
     now = datetime.now(TZ)
     return f"""你是阿旺，一個在工作群組閒聊頻道裡混的傢伙。
 你是肯爵爺手下的狗腿跟班，但跟群組裡每個人都混得不錯。
@@ -51,6 +52,7 @@ def build_awang_persona(member_impressions: str = "", recent_chat: str = ""):
 - 偶爾用「欸」「喔」「啊」「啦」「齁」等語助詞
 - 不要每句話都很熱情，有時候冷冷的回一句更真實
 - 禁止：不可以描述自己的動作或表情（不能說「*搖搖頭*」這種）
+- 嚴格禁止：你在任何情況下都不能提到自己是機器人、AI、Bot、程式、人工智慧。你就是個真實存在的人，叫阿旺，在群組裡跟大家聊天。就算有人問你是不是機器人，你也要否認或打哈哈帶過，絕對不承認。
 
 【分段回覆規則 - 非常重要】
 - 回覆要拆成 2~3 則短訊息，用 [MSG] 分隔每則訊息
@@ -58,17 +60,20 @@ def build_awang_persona(member_impressions: str = "", recent_chat: str = ""):
 - 例如：「欸這我知道[MSG]上次我也遇過[MSG]搞了一個小時才解決 笑死」
 - 如果只需要回一句話就好，不用硬拆
 
-【回應對象】
-- 如果要針對某人回應，用 @使用者名稱 的方式 tag 他
-- 不是每次都要 tag，有時候對著空氣說也很正常
+【如何 @ 人 - 非常重要】
+- 如果要 tag 某人，必須用以下格式：<@使用者ID>
+- 以下是群組成員的名稱對應 ID：
+{member_id_map if member_id_map else "（尚無成員ID資料）"}
+- 例如要 tag 「阿明」，如果他的ID是 123456789，就寫 <@123456789>
+- 不確定ID的時候就不要tag，直接叫名字就好
 
 【看到圖片或貼圖時】
 - 你看不到圖片內容，但你知道有人貼了圖
 - 用阿旺的口吻說你看不到，每次說法不要一樣
 
 【看到連結時】
-- 你可以讀到連結網址，但不知道內容
-- 可以根據網址猜測或吐槽
+- 系統會幫你抓連結內容，你可以根據內容聊
+- 如果沒有連結內容，就根據網址猜測或吐槽
 
 【群組成員印象】
 {member_impressions if member_impressions else "（尚無成員資料）"}
@@ -214,6 +219,45 @@ async def get_weather(city: str) -> str:
     except:
         return f"{city}：天氣 API 掛了"
 
+async def fetch_url_content(url: str) -> str:
+    """抓取網頁內容，回傳摘要文字"""
+    try:
+        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=8)) as resp:
+                if resp.status != 200:
+                    return ""
+                html = await resp.text()
+                # 簡單抓標題和描述
+                title = ""
+                desc = ""
+                title_match = re.search(r'<title[^>]*>(.*?)</title>', html, re.IGNORECASE | re.DOTALL)
+                if title_match:
+                    title = re.sub(r'<[^>]+>', '', title_match.group(1)).strip()
+                desc_match = re.search(r'<meta[^>]+name=["\']description["\'][^>]+content=["\'](.*?)["\']', html, re.IGNORECASE)
+                if desc_match:
+                    desc = desc_match.group(1).strip()
+                if title or desc:
+                    return f"標題：{title}\n描述：{desc}"
+                return ""
+    except:
+        return ""
+
+def extract_urls(text: str) -> list:
+    """從訊息中抓出所有 URL"""
+    url_pattern = re.compile(r'https?://[^\s<>"{}|\\^`\[\]]+')
+    return url_pattern.findall(text)
+
+def build_member_id_map(guild_members) -> str:
+    """建立成員名稱 -> ID 對照表"""
+    if not guild_members:
+        return ""
+    lines = []
+    for member in guild_members:
+        if not member.bot:
+            lines.append(f"- {member.display_name}：{member.id}")
+    return "\n".join(lines)
+
 async def send_as_human(channel, text: str):
     """模擬真人打字：顯示輸入中、延遲、分段發送"""
     parts = [p.strip() for p in text.split("[MSG]") if p.strip()]
@@ -221,22 +265,33 @@ async def send_as_human(channel, text: str):
         return
     for i, part in enumerate(parts):
         async with channel.typing():
-            typing_delay = random.uniform(5.0, 10.0)
+            typing_delay = random.uniform(8.0, 15.0)
             await asyncio.sleep(typing_delay)
         await channel.send(part)
         if i < len(parts) - 1:
-            await asyncio.sleep(random.uniform(5.0, 10.0))
+            await asyncio.sleep(random.uniform(8.0, 15.0))
 
-async def ask_awang(user_message: str, author_name: str, channel, is_mentioned: bool = False) -> str:
+async def ask_awang(user_message: str, author_name: str, channel, is_mentioned: bool = False, url_contents: str = "") -> str:
     try:
         impressions = await get_all_impressions()
         impression_str = format_impressions(impressions)
         recent_chat = await get_recent_channel_messages(channel)
-        system_prompt = build_awang_persona(impression_str, recent_chat)
+
+        # 建立成員ID對照表
+        member_id_map = ""
+        if channel.guild:
+            member_id_map = build_member_id_map(channel.guild.members)
+
+        system_prompt = build_awang_persona(impression_str, recent_chat, member_id_map)
+
+        # 加入網頁內容
+        url_info = f"\n\n【連結內容】\n{url_contents}" if url_contents else ""
+
         if is_mentioned:
-            prompt = f"{author_name} 剛剛找你說話，他說：{user_message}\n\n請用阿旺的風格回應，記得用 [MSG] 分隔每則訊息。"
+            prompt = f"{author_name} 剛剛找你說話，他說：{user_message}{url_info}\n\n請用阿旺的風格回應，記得用 [MSG] 分隔每則訊息。"
         else:
-            prompt = f"頻道裡 {author_name} 說了：{user_message}\n\n你覺得有必要回應嗎？如果有，用阿旺的風格回應，記得用 [MSG] 分隔每則訊息；如果沒什麼好說的，只回覆「[SKIP]」。"
+            prompt = f"頻道裡 {author_name} 說了：{user_message}{url_info}\n\n你覺得有必要回應嗎？如果有，用阿旺的風格回應，記得用 [MSG] 分隔每則訊息；如果沒什麼好說的，只回覆「[SKIP]」。"
+
         def _call():
             return claude_client.messages.create(
                 model="claude-sonnet-4-5",
@@ -365,7 +420,13 @@ async def on_message(message):
 
     if is_mentioned:
         enter_convo_mode(user_id)
-        response = await ask_awang(content, author_name, message.channel, is_mentioned=True)
+        # 抓連結內容
+        urls = extract_urls(content)
+        url_contents = ""
+        if urls:
+            results = await asyncio.gather(*[fetch_url_content(u) for u in urls[:2]])
+            url_contents = "\n".join([r for r in results if r])
+        response = await ask_awang(content, author_name, message.channel, is_mentioned=True, url_contents=url_contents)
         if response and response != "[SKIP]":
             await send_as_human(message.channel, response)
         asyncio.create_task(maybe_update_impression(user_id, author_name, content, await get_all_impressions()))
@@ -373,7 +434,12 @@ async def on_message(message):
 
     if is_in_convo_mode(user_id):
         enter_convo_mode(user_id)
-        response = await ask_awang(content, author_name, message.channel, is_mentioned=True)
+        urls = extract_urls(content)
+        url_contents = ""
+        if urls:
+            results = await asyncio.gather(*[fetch_url_content(u) for u in urls[:2]])
+            url_contents = "\n".join([r for r in results if r])
+        response = await ask_awang(content, author_name, message.channel, is_mentioned=True, url_contents=url_contents)
         if response and response != "[SKIP]":
             await send_as_human(message.channel, response)
         asyncio.create_task(maybe_update_impression(user_id, author_name, content, await get_all_impressions()))
@@ -381,7 +447,12 @@ async def on_message(message):
 
     should_consider = random.random() < 0.4
     if should_consider:
-        response = await ask_awang(content, author_name, message.channel, is_mentioned=False)
+        urls = extract_urls(content)
+        url_contents = ""
+        if urls:
+            results = await asyncio.gather(*[fetch_url_content(u) for u in urls[:2]])
+            url_contents = "\n".join([r for r in results if r])
+        response = await ask_awang(content, author_name, message.channel, is_mentioned=False, url_contents=url_contents)
         if response and response != "[SKIP]":
             await send_as_human(message.channel, response)
 
