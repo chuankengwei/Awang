@@ -365,6 +365,9 @@ async def check_idle():
     global last_message_time
     try:
         now = datetime.now(TZ)
+        # 週末（週六=5、週日=6）不主動
+        if now.weekday() >= 5:
+            return
         if now.hour < DAYTIME_START or now.hour >= DAYTIME_END:
             return
         if last_message_time is None:
