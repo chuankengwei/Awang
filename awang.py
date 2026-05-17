@@ -19,7 +19,22 @@ DISCORD_TOKEN = os.environ.get("DISCORD_TOKEN", "")
 CLAUDE_KEY = os.environ.get("CLAUDE_KEY", "")
 SPREADSHEET_ID = os.environ.get("SPREADSHEET_ID", "")
 OPENWEATHER_KEY = os.environ.get("OPENWEATHER_KEY", "")
-TARGET_CHANNEL_ID = int(os.environ.get("TARGET_CHANNEL_ID", "0"))
+
+# 多伺服器頻道設定，格式：伺服器ID:頻道ID,伺服器ID:頻道ID
+# 例如：123456789:987654321,111111111:222222222
+_channel_config_raw = os.environ.get("CHANNEL_CONFIG", "")
+GUILD_CHANNEL_MAP = {}
+for pair in _channel_config_raw.split(","):
+    pair = pair.strip()
+    if ":" in pair:
+        guild_id, channel_id = pair.split(":", 1)
+        try:
+            GUILD_CHANNEL_MAP[int(guild_id.strip())] = int(channel_id.strip())
+        except:
+            pass
+
+def get_target_channel_id(guild_id: int) -> int:
+    return GUILD_CHANNEL_MAP.get(guild_id, 0)
 
 TZ = pytz.timezone("Asia/Taipei")
 DAYTIME_START = 9
@@ -336,28 +351,32 @@ async def start_topic():
         now = datetime.now(TZ)
         if now.hour < DAYTIME_START or now.hour >= DAYTIME_END:
             return
-        channel = bot.get_channel(TARGET_CHANNEL_ID)
-        if not channel:
-            return
+
         impressions = await get_all_impressions()
         impression_str = format_impressions(impressions)
-        recent_chat = await get_recent_channel_messages(channel, limit=15)
-        prompt = f"""阿旺，頻道{IDLE_HOURS}小時沒人說話了，隨口說一句話讓大家聊起來。
+
+        for guild_id, channel_id in GUILD_CHANNEL_MAP.items():
+            channel = bot.get_channel(channel_id)
+            if not channel:
+                continue
+            recent_chat = await get_recent_channel_messages(channel, limit=15)
+            prompt = f"""阿旺，頻道{IDLE_HOURS}小時沒人說話了，隨口說一句話讓大家聊起來。
 成員印象：{impression_str or '無'}
 最近對話：{recent_chat or '無'}
 一句話就好，不用[MSG]，自然口語，不要太熱情。"""
-        def _call():
-            return claude_client.messages.create(
-                model="claude-sonnet-4-5",
-                max_tokens=80,
-                messages=[{"role": "user", "content": prompt}]
-            )
-        response = await asyncio.to_thread(_call)
-        msg = response.content[0].text.strip()
-        if msg:
-            await send_as_human(channel, msg)
-            global last_message_time
-            last_message_time = datetime.now(TZ)
+            def _call():
+                return claude_client.messages.create(
+                    model="claude-sonnet-4-5",
+                    max_tokens=80,
+                    messages=[{"role": "user", "content": prompt}]
+                )
+            response = await asyncio.to_thread(_call)
+            msg = response.content[0].text.strip()
+            if msg:
+                await send_as_human(channel, msg)
+
+        global last_message_time
+        last_message_time = datetime.now(TZ)
     except Exception as e:
         print(f"主動開話題錯誤: {e}")
 
@@ -384,8 +403,28 @@ async def on_message(message):
 
     if message.author.bot:
         return
-    if message.channel.id != TARGET_CHANNEL_ID:
+
+    # DM 回應
+    if isinstance(message.channel, discord.DMChannel):
+        dm_replies = [
+            "我不太喜歡私訊啦，去頻道裡敲我吧 😑",
+            "欸私訊我幹嘛，去頻道找我啦",
+            "私訊？不習慣，去頻道裡說吧",
+            "我比較喜歡在頻道聊，去那邊找我",
+            "不太想用私訊欸，去頻道敲我啦",
+        ]
+        async with message.channel.typing():
+            await asyncio.sleep(random.uniform(2.0, 4.0))
+        await message.channel.send(random.choice(dm_replies))
         return
+
+    # 只回應有設定的頻道
+    if not message.guild:
+        return
+    target_channel_id = get_target_channel_id(message.guild.id)
+    if target_channel_id == 0 or message.channel.id != target_channel_id:
+        return
+
     if message.id in processed_set:
         return
     processed_set.add(message.id)
@@ -495,17 +534,12 @@ async def on_ready():
         scheduler.add_job(check_idle, "interval", minutes=30, id="check_idle", replace_existing=True)
         scheduler.start()
 
-    channel = bot.get_channel(TARGET_CHANNEL_ID)
-    if channel:
-        greetings = [
-            "安阿 👾",
-            "各位好 🫡",
-            "欸我來了 🎮",
-            "大家在幹嘛 💛",
-            "噢有人在喔 😑",
-        ]
-        async with channel.typing():
-            await asyncio.sleep(random.uniform(2.0, 4.0))
-        await channel.send(random.choice(greetings))
+    greetings = ["安阿 👾", "各位好 🫡", "欸我來了 🎮", "大家在幹嘛 💛", "噢有人在喔 😑"]
+    for guild_id, channel_id in GUILD_CHANNEL_MAP.items():
+        channel = bot.get_channel(channel_id)
+        if channel:
+            async with channel.typing():
+                await asyncio.sleep(random.uniform(2.0, 4.0))
+            await channel.send(random.choice(greetings))
 
 bot.run(DISCORD_TOKEN)
