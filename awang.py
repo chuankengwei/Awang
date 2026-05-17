@@ -393,7 +393,8 @@ async def check_idle():
             return
         idle_minutes = (now - last_message_time).total_seconds() / 60
         if idle_minutes >= IDLE_HOURS * 60:
-            await start_topic()
+            if random.random() < 0.1:  # 10% 機率才主動開話題
+                await start_topic()
     except Exception as e:
         print(f"閒置檢查錯誤: {e}")
 
