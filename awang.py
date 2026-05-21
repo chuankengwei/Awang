@@ -19,6 +19,8 @@ DISCORD_TOKEN = os.environ.get("DISCORD_TOKEN", "")
 CLAUDE_KEY = os.environ.get("CLAUDE_KEY", "")
 SPREADSHEET_ID = os.environ.get("SPREADSHEET_ID", "")
 OPENWEATHER_KEY = os.environ.get("OPENWEATHER_KEY", "")
+# 友善 bot 清單（會被納入頻道訊息 context），用逗號分隔 bot user ID
+FRIENDLY_BOT_IDS = {int(x) for x in os.environ.get("FRIENDLY_BOT_IDS", "").split(",") if x.strip().isdigit()}
 
 # 多伺服器頻道設定，格式：伺服器ID:頻道ID,伺服器ID:頻道ID
 # 例如：123456789:987654321,111111111:222222222
@@ -227,7 +229,9 @@ async def get_recent_channel_messages(channel, limit=CONTEXT_MESSAGES) -> str:
         messages = []
         async for msg in channel.history(limit=limit, oldest_first=False):
             if msg.author.bot and msg.author.id == bot.user.id:
-                messages.append(f"[阿旺]：{msg.content}")
+                messages.append(f"[阿旺|{bot.user.id}]：{msg.content}")
+            elif msg.author.bot and msg.author.id in FRIENDLY_BOT_IDS:
+                messages.append(f"[{msg.author.display_name}|{msg.author.id}]：{msg.content}")
             elif msg.author.bot:
                 continue
             else:
@@ -236,7 +240,7 @@ async def get_recent_channel_messages(channel, limit=CONTEXT_MESSAGES) -> str:
                     content += " [貼圖/檔案]"
                 if msg.stickers:
                     content += f" [貼圖:{', '.join([s.name for s in msg.stickers])}]"
-                messages.append(f"[{msg.author.display_name}]：{content}")
+                messages.append(f"[{msg.author.display_name}|{msg.author.id}]：{content}")
         messages.reverse()
         return "\n".join(messages)
     except Exception as e:
@@ -271,7 +275,11 @@ def extract_urls(text: str) -> list:
 def build_member_id_map(guild_members) -> str:
     if not guild_members:
         return ""
-    return "\n".join([f"- {m.display_name}：{m.id}" for m in guild_members if not m.bot])
+    lines = []
+    for m in guild_members:
+        if not m.bot or m.id in FRIENDLY_BOT_IDS:
+            lines.append(f"- {m.display_name}：{m.id}")
+    return "\n".join(lines)
 
 async def get_weather(city: str) -> str:
     try:
