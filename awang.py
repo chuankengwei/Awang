@@ -367,6 +367,7 @@ async def start_topic():
                 continue
             recent_chat = await get_recent_channel_messages(channel, limit=15)
             prompt = f"""阿旺，頻道{IDLE_HOURS}小時沒人說話了，隨口說一句話讓大家聊起來。
+現在台灣時間是 {now.strftime('%H:%M')}，星期{['一','二','三','四','五','六','日'][now.weekday()]}。
 成員印象：{impression_str or '無'}
 最近對話：{recent_chat or '無'}
 一句話就好，不用[MSG]，自然口語，不要太熱情。"""
