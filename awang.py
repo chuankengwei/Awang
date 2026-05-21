@@ -141,6 +141,8 @@ processed_set = set()
 last_message_time = None
 convo_mode = {}
 is_responding = False  # 是否正在回應中，避免同時回多人
+bot_last_interaction = None  # 跟友善 bot 最後互動時間（冷卻用）
+BOT_COOLDOWN_SECONDS = 60  # bot 互動冷卻時間
 
 _sheet_cache = None
 _worksheet_cache = {}
@@ -415,9 +417,40 @@ async def check_idle():
 
 @bot.event
 async def on_message(message):
-    global last_message_time, is_responding
+    global last_message_time, is_responding, bot_last_interaction
 
+    # 友善 bot（如阿福）：只有 @ 阿旺才回，且需不在冷卻中
     if message.author.bot:
+        if message.author.id not in FRIENDLY_BOT_IDS:
+            return
+        if bot.user not in message.mentions:
+            return
+        if bot_last_interaction is not None:
+            elapsed = (datetime.now(TZ) - bot_last_interaction).total_seconds()
+            if elapsed < BOT_COOLDOWN_SECONDS:
+                return
+        # 友善 bot 觸發：更新冷卻、直接走回應邏輯
+        bot_last_interaction = datetime.now(TZ)
+        if is_responding:
+            return
+        is_responding = True
+        try:
+            url_contents = ""
+            urls = extract_urls(message.content)
+            if urls:
+                results = await asyncio.gather(*[fetch_url_content(u) for u in urls[:2]])
+                url_contents = "\n".join([r for r in results if r])
+            response = await ask_awang(
+                message.content, message.author.display_name,
+                str(message.author.id), message.channel,
+                is_mentioned=True, url_contents=url_contents
+            )
+            if response and response != "[SKIP]":
+                await send_as_human(message.channel, response)
+        except Exception as e:
+            print(f"友善 bot 對話錯誤: {e}")
+        finally:
+            is_responding = False
         return
 
     # DM 回應
