@@ -142,7 +142,9 @@ last_message_time = None
 convo_mode = {}
 is_responding = False  # 是否正在回應中，避免同時回多人
 bot_last_interaction = None  # 跟友善 bot 最後互動時間（冷卻用）
-BOT_COOLDOWN_SECONDS = 60  # bot 互動冷卻時間
+BOT_COOLDOWN_SECONDS = 180  # bot 互動冷卻時間（一輪結束後 3 分鐘）
+BOT_MAX_TURNS = 3  # 每輪最多來回次數
+bot_turn_count = 0  # 目前來回次數
 
 _sheet_cache = None
 _worksheet_cache = {}
@@ -417,7 +419,7 @@ async def check_idle():
 
 @bot.event
 async def on_message(message):
-    global last_message_time, is_responding, bot_last_interaction
+    global last_message_time, is_responding, bot_last_interaction, bot_turn_count
 
     # 友善 bot（如阿福）：只有 @ 阿旺才回，且需不在冷卻中
     if message.author.bot:
@@ -425,12 +427,16 @@ async def on_message(message):
             return
         if bot.user not in message.mentions:
             return
-        if bot_last_interaction is not None:
+        # 冷卻檢查（一輪結束後）
+        if bot_last_interaction is not None and bot_turn_count >= BOT_MAX_TURNS:
             elapsed = (datetime.now(TZ) - bot_last_interaction).total_seconds()
             if elapsed < BOT_COOLDOWN_SECONDS:
                 return
+            else:
+                bot_turn_count = 0  # 冷卻結束，重置來回次數
         # 友善 bot 觸發：更新冷卻、直接走回應邏輯
         bot_last_interaction = datetime.now(TZ)
+        bot_turn_count += 1
         if is_responding:
             return
         is_responding = True
@@ -440,8 +446,10 @@ async def on_message(message):
             if urls:
                 results = await asyncio.gather(*[fetch_url_content(u) for u in urls[:2]])
                 url_contents = "\n".join([r for r in results if r])
+            # 最後一回合提示阿旺自然結束對話
+            extra_hint = "\n\n【注意】這是本輪對話的最後一回合，請自然結束對話，不要再 tag 對方。" if bot_turn_count >= BOT_MAX_TURNS else ""
             response = await ask_awang(
-                message.content, message.author.display_name,
+                message.content + extra_hint, message.author.display_name,
                 str(message.author.id), message.channel,
                 is_mentioned=True, url_contents=url_contents
             )
