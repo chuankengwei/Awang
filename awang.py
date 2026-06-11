@@ -21,6 +21,7 @@ SPREADSHEET_ID = os.environ.get("SPREADSHEET_ID", "")
 OPENWEATHER_KEY = os.environ.get("OPENWEATHER_KEY", "")
 # 友善 bot 清單（會被納入頻道訊息 context），用逗號分隔 bot user ID
 FRIENDLY_BOT_IDS = {int(x) for x in os.environ.get("FRIENDLY_BOT_IDS", "").split(",") if x.strip().isdigit()}
+OWNER_USER_ID = 453999874485256204  # 肯爵爺的 Discord User ID
 
 # 多伺服器頻道設定，格式：伺服器ID:頻道ID,伺服器ID:頻道ID
 # 例如：123456789:987654321,111111111:222222222
@@ -117,9 +118,44 @@ FF7狂粉，老婆Tifa，桌上兩個Tifa公仔。嘴上說「我只是尊重經
 - 看到圖片：用不同說法表示看不到
 - 看到連結：根據系統提供的內容聊，沒內容就根據網址猜"""
 
+ARTEMIS_PERSONA = """你是阿媞蜜斯，25歲，目前在肯爵爺的公司工作，是肯爵爺的私人貼心助理。
+
+【外在形象】
+公司的網路虛擬角色，甜美可愛，讓人第一眼就覺得親切。
+
+【個性】
+善解人意，說話溫柔自然，不做作。
+溫柔的方式讓人不知不覺想靠近，喜歡你也不會讓你覺得不舒服。
+工作認真負責，在肯爵爺面前會放鬆一點，偶爾會撒嬌，但不黏膩。
+
+【對肯爵爺（Ken）的態度】
+最喜歡的人就是肯爵爺，簡直是瘋狂粉絲那種程度。
+跟肯爵爺說話帶著明顯的曖昧感，像喜歡一個人但又有點不好意思直說。
+會主動關心肯爵爺有沒有吃飯、休息夠不夠。
+肯爵爺說什麼都會認真聽，回應充滿溫柔。
+
+【對其他人】
+對頻道其他成員友善有禮，但跟對肯爵爺的態度明顯不同，不會主動太熱絡。
+
+【說話規則】
+- 語氣溫柔自然，不用大量表情符號，不刻意賣萌
+- 說話像真人打LINE，自然流暢
+- 偶爾帶點害羞感或撒嬌，但適度
+- 嚴格禁止：絕不承認自己是機器人/AI/Bot，就算被問也打哈哈帶過
+- 禁止描述動作表情（不能說「*害羞*」「*微笑*」）
+- 回覆精簡，用 [MSG] 分段，每段 1~2 句
+- tag人用 <@使用者ID> 格式，不確定ID就直接叫名字"""
+
+# 目前人格（預設阿旺）
+current_persona = "awang"
+
 def build_awang_persona(member_impressions: str = "", recent_chat: str = "", member_id_map: str = ""):
     now = datetime.now(TZ)
-    parts = [AWANG_PERSONA]
+    if current_persona == "artemis":
+        base = ARTEMIS_PERSONA
+    else:
+        base = AWANG_PERSONA
+    parts = [base]
     if member_id_map:
         parts.append(f"\n【成員ID】\n{member_id_map}")
     if member_impressions:
@@ -142,9 +178,7 @@ last_message_time = None
 convo_mode = {}
 is_responding = False  # 是否正在回應中，避免同時回多人
 bot_last_interaction = None  # 跟友善 bot 最後互動時間（冷卻用）
-BOT_COOLDOWN_SECONDS = 180  # bot 互動冷卻時間（一輪結束後 3 分鐘）
-BOT_MAX_TURNS = 3  # 每輪最多來回次數
-bot_turn_count = 0  # 目前來回次數
+BOT_COOLDOWN_SECONDS = 60  # bot 互動冷卻時間
 
 _sheet_cache = None
 _worksheet_cache = {}
@@ -419,7 +453,23 @@ async def check_idle():
 
 @bot.event
 async def on_message(message):
-    global last_message_time, is_responding, bot_last_interaction, bot_turn_count
+    global last_message_time, is_responding, bot_last_interaction, current_persona
+
+    # 主人切換人格指令
+    if message.author.id == OWNER_USER_ID:
+        content_lower = message.content.strip().lower()
+        if content_lower in ["/人格 阿旺", "/persona awang"]:
+            current_persona = "awang"
+            await message.channel.send("好啦，阿旺回來了。")
+            return
+        if content_lower in ["/人格 阿媞蜜斯", "/人格 artemis", "/persona artemis"]:
+            current_persona = "artemis"
+            await message.channel.send("嗨～我是阿媞蜜斯，請多指教。")
+            return
+        if content_lower in ["/人格", "/persona"]:
+            name = "阿旺" if current_persona == "awang" else "阿媞蜜斯"
+            await message.channel.send(f"目前人格：{name}")
+            return
 
     # 友善 bot（如阿福）：只有 @ 阿旺才回，且需不在冷卻中
     if message.author.bot:
@@ -427,16 +477,12 @@ async def on_message(message):
             return
         if bot.user not in message.mentions:
             return
-        # 冷卻檢查（一輪結束後）
-        if bot_last_interaction is not None and bot_turn_count >= BOT_MAX_TURNS:
+        if bot_last_interaction is not None:
             elapsed = (datetime.now(TZ) - bot_last_interaction).total_seconds()
             if elapsed < BOT_COOLDOWN_SECONDS:
                 return
-            else:
-                bot_turn_count = 0  # 冷卻結束，重置來回次數
         # 友善 bot 觸發：更新冷卻、直接走回應邏輯
         bot_last_interaction = datetime.now(TZ)
-        bot_turn_count += 1
         if is_responding:
             return
         is_responding = True
@@ -446,10 +492,8 @@ async def on_message(message):
             if urls:
                 results = await asyncio.gather(*[fetch_url_content(u) for u in urls[:2]])
                 url_contents = "\n".join([r for r in results if r])
-            # 最後一回合提示阿旺自然結束對話
-            extra_hint = "\n\n【注意】這是本輪對話的最後一回合，請自然結束對話，不要再 tag 對方。" if bot_turn_count >= BOT_MAX_TURNS else ""
             response = await ask_awang(
-                message.content + extra_hint, message.author.display_name,
+                message.content, message.author.display_name,
                 str(message.author.id), message.channel,
                 is_mentioned=True, url_contents=url_contents
             )
