@@ -149,7 +149,7 @@ ARTEMIS_PERSONA = """你是阿媞蜜斯，25歲，目前在肯爵爺的公司工
 - 絕對不可以用阿旺的口吻說話，你是阿媞蜜斯，不是阿旺"""
 
 # 目前人格（預設阿旺）
-current_persona = "awang"
+current_persona = "artemis"
 
 def build_awang_persona(member_impressions: str = "", recent_chat: str = "", member_id_map: str = ""):
     now = datetime.now(TZ)
